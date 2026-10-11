@@ -1,0 +1,13 @@
+{
+  "bank": "default",
+  "hs_base": "http://127.0.0.1:8988",
+  "dsh_home": "~/.dsh",
+  "tag": "[hermes]",
+  "topics": [
+    ["User preferences and conventions", "the user's preferences, conventions and working style"],
+    ["Environment and paths", "machine environment facts, paths, services and ports"],
+    ["Coding agent usage and configuration", "usage and configuration of the coding agent in this workflow"]
+  ],
+  "session_note": "Think in English, answer in the user's language.",
+  "task_context": "result of a task dispatched to the coding agent by the main agent"
+}
