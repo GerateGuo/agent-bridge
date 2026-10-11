@@ -148,6 +148,23 @@ Both are plain scripts — no LLM, no token cost. Two pitfalls are already handl
 6. **Concurrency-safe reads.** Session files still being written are skipped (only files untouched
    for 60 seconds are processed).
 
+## Implementation notes
+
+* **Hindsight data plane** (loopback, unauthenticated by default): `GET /health`,
+  `POST /v1/default/banks/<bank>/memories` with `{"items":[MemoryItem,…],"async":true}`,
+  `GET .../memories/list?tags=dsh-task&tags_match=all&limit=N`, `POST .../memories/recall`.
+  A non-ASCII bank id must be percent-encoded. Extraction is asynchronous, so a memory you just
+  wrote may not answer a tag query immediately. `tags` is an array parameter — repeat it
+  (`?tags=a&tags=b`), never comma-join it.
+* **dsh session logs**: `$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v3.jsonl.zstd` —
+  zstd-compressed JSONL. `harvest` reads `user/message` (to find the tag), `assistant/message`
+  (final answer), the top-level `time` (epoch ms) and `data.usage`
+  (`inputTokens` / `cacheReadTokens` / `outputTokens` / `reasoningTokens`). Files touched within
+  the last 60 s are skipped so a half-written log is never parsed.
+* **Tag detection**: the tag must be at the start of the first `user/message`
+  (`content[0].text.startswith(tag)`). Sessions without it are recorded as `skipped` in the cursor,
+  so they are never decompressed a second time.
+
 ## Verified
 
 macOS, dsh `0.1.5-rc.1` (2026-09-15):

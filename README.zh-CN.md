@@ -135,6 +135,20 @@ cd "${HERMES_DSH_ACP_CWD:-$PWD}" && dsh --profile headless "$TAG $TASK"
 5. **对 Hindsight 只追加。** 只写不删；要退役一条过时事实，是你自己主动、可回滚的 `invalidate` 操作。
 6. **并发安全。** 正在被写入的会话文件会被跳过（只处理 60 秒内没再变动的文件）。
 
+## 实现细节备注
+
+* **Hindsight 数据面**（环回、默认免鉴权）：`GET /health`、
+  `POST /v1/default/banks/<bank>/memories`（body `{"items":[MemoryItem,…],"async":true}`）、
+  `GET .../memories/list?tags=dsh-task&tags_match=all&limit=N`、`POST .../memories/recall`。
+  非 ASCII 的 bank id 必须 percent-encode；抽取是**异步**的，刚写入的记忆不一定立刻能被 tag 查询到。
+  `tags` 是数组参数——重复传（`?tags=a&tags=b`），不能逗号拼接。
+* **dsh 会话日志**：`$DSH_HOME/sessions/<cwd-slug>/<session-id>/session.v3.jsonl.zstd`，zstd 压缩的 JSONL。
+  `harvest` 读 `user/message`（找标记）、`assistant/message`（最终答复）、顶层 `time`（毫秒 epoch）
+  与 `data.usage`（`inputTokens` / `cacheReadTokens` / `outputTokens` / `reasoningTokens`）。
+  60 秒内被改动过的文件会被跳过，避免解析到写一半的日志。
+* **标记判定**：标记必须位于首条 `user/message` 的开头（`content[0].text.startswith(tag)`）。
+  没有标记的会话在游标里记为 `skipped`，因此不会被反复解压。
+
 ## 验收记录
 
 macOS、dsh `0.1.5-rc.1`（2026-09-15）实测：

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agent_bridge.py —— Hermes ↔ dsh 记忆桥（设计见 TASK.md）。
+"""agent_bridge.py —— Hermes ↔ dsh 记忆桥（设计说明与验收记录见 README）。
 
 单一程序，三个动作，事实唯一来源＝Hindsight：
 
