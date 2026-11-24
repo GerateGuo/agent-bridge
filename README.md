@@ -183,7 +183,7 @@ The snapshot enters the **first request of every session**, so keep it lean; `sy
 final character count. As a reference, a 1.5k-character snapshot is ~0.5k tokens on top of dsh's own
 ~7.1k-token floor (harness prompt + tool schemas), and because the prefix is stable it is mostly
 billed at the cheap prefix-cache rate. Knobs: `--max-chars`, `--per-section`, `--fact-limit`,
-`--recent-rows`.
+`--recent-rows`, `--recent` (scan depth for recent tasks, default 64).
 
 ## Related
 

@@ -159,11 +159,19 @@ def slug_to_cwd(slug: str) -> str:
 
 # ── harvest：dsh → Hindsight ────────────────────────────────────────────────
 
-def _text_parts(content) -> str:
+def _text_parts(content, body_only: bool = False) -> str:
+    """拼接 content 里的文本；body_only=True 时只收正文（type 缺失或为 text）。"""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(str(c.get("text") or "") for c in content if isinstance(c, dict)).strip()
+        texts = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if body_only and part.get("type") not in (None, "text"):
+                continue
+            texts.append(str(part.get("text") or ""))
+        return "\n".join(texts).strip()
     return ""
 
 
@@ -180,7 +188,8 @@ def extract_session(path: Path):
     if not raw:
         return None
     session_id = path.parent.name
-    cwd = slug_to_cwd(path.parent.parent.name)
+    top_cwd = ""
+    data_cwd = ""
     tagged = False
     prompt = ""
     answer = ""
@@ -198,8 +207,10 @@ def extract_session(path: Path):
             continue
         kind = record.get("type")
         data = record.get("data") if isinstance(record.get("data"), dict) else {}
-        if isinstance(data.get("cwd"), str) and data["cwd"]:
-            cwd = data["cwd"]
+        if isinstance(record.get("cwd"), str) and record["cwd"]:
+            top_cwd = record["cwd"]            # 会话首行顶层 cwd 是权威值
+        if isinstance(data.get("cwd"), str) and data["cwd"] and not data_cwd:
+            data_cwd = data["cwd"]
         if isinstance(data.get("usage"), dict):
             usage = data["usage"]
         if isinstance(record.get("time"), (int, float)):
@@ -211,7 +222,7 @@ def extract_session(path: Path):
                 prompt = text
         elif kind == "assistant/message":
             message = data.get("message") if isinstance(data.get("message"), dict) else {}
-            text = _text_parts(message.get("content"))
+            text = _text_parts(message.get("content"), body_only=True)
             if text:
                 answer = text
         elif kind == "session/title" and isinstance(data.get("title"), str):
@@ -226,6 +237,7 @@ def extract_session(path: Path):
         return None
 
     when = dt.datetime.fromtimestamp(last_ms / 1000) if last_ms else dt.datetime.now()
+    cwd = top_cwd or data_cwd or slug_to_cwd(path.parent.parent.name)
     usage_bits = ""
     if usage:
         usage_bits = (f"（输入 {usage.get('inputTokens', 0)}、缓存命中 {usage.get('cacheReadTokens', 0)}、"
@@ -366,6 +378,11 @@ def _mostly_ascii(text: str) -> bool:
     return letters > 3 * len(_CJK.findall(text)) + 30
 
 
+def _has_chinese(text: str, min_chars: int = 4) -> bool:
+    """判断文本是否包含足够汉字（≥min_chars 个）。用于优先收集中文行。"""
+    return len(_CJK.findall(text)) >= min_chars
+
+
 def _too_similar(text: str, kept: list, ratio: float = SIMILARITY) -> bool:
     """同义改写去重：整行相等比不出来，用相似度兜住（比对全串——只比前 N 字符会被日期前缀骗过）。"""
     return any(difflib.SequenceMatcher(None, text, prev).ratio() > ratio for prev in kept)
@@ -424,15 +441,31 @@ def render_snapshot(recent: list, recall_sections, max_chars: int,
         body += [f"- {fact}" for fact in kept]
         body.append("")
     if recent:
-        rows = []
-        for item in recent[:recent_rows]:
+        # 按任务聚合：每个任务只出一行，优先中文，fallback 英文。
+        # API 返回已按新→旧排序，保持首次出现顺序即可。
+        task_order = []          # 保持任务出现顺序（新→旧）
+        task_best = {}           # task_key -> formatted line
+        task_has_cn = {}         # task_key -> bool
+        for item in recent:
             stamp = str(item.get("date") or item.get("timestamp") or "")[:16]
             tags = item.get("tags") or []
             cwd = next((t[4:] for t in tags if isinstance(t, str) and t.startswith("cwd:")), "")
             line = _first_line(str(item.get("text") or ""), recent_limit)
-            if not line or _mostly_ascii(line):
+            if not line:
                 continue
-            rows.append(f"- [{stamp}]{' ' + cwd if cwd else ''} {line}")
+            # 任务键：session: tag 优先，没有就用 stamp+cwd 兜底
+            session_tag = next((t for t in tags if isinstance(t, str) and t.startswith("session:")), "")
+            task_key = session_tag if session_tag else f"{stamp}|{cwd}"
+            formatted = f"- [{stamp}]{' ' + cwd if cwd else ''} {line}"
+            if task_key not in task_best:
+                task_order.append(task_key)
+                task_best[task_key] = formatted
+                task_has_cn[task_key] = _has_chinese(line)
+            elif not task_has_cn[task_key] and _has_chinese(line):
+                # 之前只收了英文，现在遇到中文 → 升级
+                task_best[task_key] = formatted
+                task_has_cn[task_key] = True
+        rows = [task_best[k] for k in task_order[:recent_rows]]
         if rows:
             body.append("## 最近由 Hermes 派发的 dsh 任务")
             body += rows
@@ -518,7 +551,7 @@ def main(argv=None) -> int:
     p_sync.add_argument("--per-section", type=int, default=PER_SECTION, help="每个主题最多保留条数")
     p_sync.add_argument("--fact-limit", type=int, default=FACT_LIMIT, help="每条事实的字符上限")
     p_sync.add_argument("--recent-rows", type=int, default=RECENT_ROWS, help="最近任务保留条数")
-    p_sync.add_argument("--recent", type=int, default=8, help="最近任务查询条数")
+    p_sync.add_argument("--recent", type=int, default=64, help="最近任务查询条数（扫描深度，越大越不容易漏掉中文行）")
     p_sync.add_argument("--tokens-per-topic", type=int, default=1200)
     p_sync.set_defaults(func=cmd_sync)
 

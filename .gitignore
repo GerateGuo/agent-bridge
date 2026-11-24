@@ -6,3 +6,5 @@ config.json
 state.json
 bridge.log
 TASK.md
+TASK-*.md
+RESULT*.md

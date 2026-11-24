@@ -165,7 +165,7 @@ macOS、dsh `0.1.5-rc.1`（2026-09-15）实测：
 
 快照会进入**每个会话的首次请求**，所以要控制长度；`sync` 会打印最终字符数。参考值：1500 字符的快照
 ≈ 0.5k tokens，叠加在 dsh 自身约 7.1k tokens 的地板（harness 提示 + 工具 schema）之上；因为前缀稳定，
-绝大部分按便宜的 prefix-cache 计费。可调项：`--max-chars`、`--per-section`、`--fact-limit`、`--recent-rows`。
+绝大部分按便宜的 prefix-cache 计费。可调项：`--max-chars`、`--per-section`、`--fact-limit`、`--recent-rows`、`--recent`（最近任务扫描深度，默认 64）。
 
 ## 相关项目
 
